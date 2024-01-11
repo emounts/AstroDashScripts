@@ -1,5 +1,8 @@
 # Git Hub Information
 
+Ensure that you are in the correct folder. If in incorrect folder, open the correct folder:
+    `pwd`
+
 To check whether files have uploaded:
     `git status`
 
@@ -15,3 +18,6 @@ To commit to git hub; these are the files we want to send:
 To upload to git hub:
     `git push`
 
+
+If edited on git hub: 
+    `git pull`
