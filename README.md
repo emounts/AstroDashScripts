@@ -1,5 +1,14 @@
 # Git Hub Information
 
+To initialize a git repository at the start (only need to do this once)
+    `git init .`
+
+To have git not upload certain files make a file titled `.gitignore` and in the folder/file type 
+    `<foldername>/`
+    `<filename>`
+
+
+
 Ensure that you are in the correct folder. If in incorrect folder, open the correct folder:
     `pwd`
 
@@ -17,7 +26,6 @@ To commit to git hub; these are the files we want to send:
 
 To upload to git hub:
     `git push`
-
 
 If edited on git hub: 
     `git pull`
