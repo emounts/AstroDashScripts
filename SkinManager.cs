@@ -37,7 +37,6 @@ public class SkinManager : MonoBehaviour
 
     private static bool IsMenuScene()
     {
-        // Broad menu detection so selection UI never spawns/toggles rockets.
         var scene = SceneManager.GetActiveScene();
         if (scene.buildIndex == 0) return true;
 
@@ -49,6 +48,7 @@ public class SkinManager : MonoBehaviour
 
     private void Awake()
     {
+        // Singleton + persist across scenes so the selection cannot reset unexpectedly.
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
@@ -56,55 +56,73 @@ public class SkinManager : MonoBehaviour
         }
 
         Instance = this;
+        DontDestroyOnLoad(gameObject);
+
+        SceneManager.sceneLoaded += OnSceneLoaded;
 
         _currentIndex = PlayerPrefs.GetInt(GameConstants.PrefSkinMenuPosition, defaultSkinIndex);
-        if (clampSelectionToAvailable)
-        {
-            _currentIndex = ClampToAvailable(_currentIndex);
-            PlayerPrefs.SetInt(GameConstants.PrefSkinMenuPosition, _currentIndex);
-        }
-
         ApplySelection(_currentIndex, fireEvent: false);
-    }
-
-    private void Start()
-    {
-        // If user hasn't wired legacy list, auto-register in-scene rockets by tag.
-        // Skip this in menu scenes.
-        if (IsMenuScene()) return;
-
-        if (!usePrefabSpawning && (legacyRocketObjects == null || legacyRocketObjects.Count == 0))
-        {
-            GameObject[] rockets = GameObject.FindGameObjectsWithTag("RocketShip");
-            if (rockets != null)
-            {
-                System.Array.Sort(rockets, (a, b) => string.CompareOrdinal(a.name, b.name));
-                for (int i = 0; i < rockets.Length; i++)
-                {
-                    if (rockets[i] == null) continue;
-                    RegisterLegacyRocket(rockets[i]);
-                }
-            }
-
-            ApplySelection(_currentIndex, fireEvent: false);
-        }
     }
 
     private void OnDestroy()
     {
         if (Instance == this)
+        {
+            SceneManager.sceneLoaded -= OnSceneLoaded;
             Instance = null;
+        }
     }
+
+
+    private void OnEnable()
+    {
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    private void OnDisable()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+    
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        // When entering gameplay scenes, re-apply the saved selection.
+        _currentIndex = PlayerPrefs.GetInt(GameConstants.PrefSkinMenuPosition, defaultSkinIndex);
+
+        // In gameplay scenes we clamp (if desired) after we have scene objects.
+        if (!IsMenuScene() && clampSelectionToAvailable)
+            _currentIndex = ClampToAvailable(_currentIndex);
+
+        PlayerPrefs.SetInt(GameConstants.PrefSkinMenuPosition, _currentIndex);
+
+        ApplySelection(_currentIndex, fireEvent: true);
+    }
+
+    public bool HasSkins => GetMaxSelectableIndex() >= 0;
+    public int SkinCount => skins.Count;
+    public RocketSkin GetSkinAt(int index) => IsValidSkinIndex(index) ? skins[index] : null;
 
     public void SelectIndex(int index)
     {
-        index = clampSelectionToAvailable ? ClampToAvailable(index) : index;
-        if (index == _currentIndex) return;
+        if (!IsMenuScene() && clampSelectionToAvailable && HasSkins)
+            index = ClampToAvailable(index);
+
+        if (index == _currentIndex)
+        {
+            // If user hits Select without changing, still notify listeners.
+            NotifySkinChanged();
+            return;
+        }
 
         _currentIndex = index;
         PlayerPrefs.SetInt(GameConstants.PrefSkinMenuPosition, _currentIndex);
 
         ApplySelection(_currentIndex, fireEvent: true);
+    }
+
+    public void NotifySkinChanged()
+    {
+        GameEvents.RaiseSkinChanged(CurrentSkin);
     }
 
     public void Next()
@@ -142,9 +160,18 @@ public class SkinManager : MonoBehaviour
             legacyRocketObjects.Add(rocket);
     }
 
+    public void RegisterSpawnedRocket(GameObject rocket)
+    {
+        if (rocket == null) return;
+        
+        // If we had a previous spawned rocket that is different, we might want to clean it up?
+        // For now, just overwrite the reference since the scene likely just loaded or we are respawning.
+        _spawnedRocket = rocket;
+    }
+
     private void ApplySelection(int index, bool fireEvent)
     {
-        // In menu scenes, selection should NOT spawn rockets or toggle scene objects.
+        // In menu scenes we do not spawn/toggle gameplay rockets.
         if (IsMenuScene())
         {
             if (_spawnedRocket != null)
@@ -152,14 +179,20 @@ public class SkinManager : MonoBehaviour
                 Destroy(_spawnedRocket);
                 _spawnedRocket = null;
             }
-            ResetRocketMotionInMenu();
         }
         else
         {
+            GameObject resolvedCurrentRocket = ResolveCurrentRocket();
+            bool updateSkinDetected = DoesRocketUseUpdateSkin(resolvedCurrentRocket);
+
             if (usePrefabSpawning)
+            {
                 SpawnFromSkin(index);
-            else
+            }
+            else if (!updateSkinDetected)
+            {
                 ActivateLegacyRocket(index);
+            }
         }
 
         if (fireEvent)
@@ -198,8 +231,12 @@ public class SkinManager : MonoBehaviour
 
     private GameObject ResolveCurrentRocket()
     {
-        if (usePrefabSpawning)
+        // If we have a spawned rocket (either via internal prefab spawning or external registration), use it.
+        if (_spawnedRocket != null)
             return _spawnedRocket;
+            
+        if (usePrefabSpawning)
+            return _spawnedRocket; // Should be null here if caught above, but keeping structure.
 
         if (legacyRocketObjects == null || legacyRocketObjects.Count == 0)
             return null;
@@ -238,38 +275,8 @@ public class SkinManager : MonoBehaviour
         return skins != null && index >= 0 && index < skins.Count;
     }
 
-    private void ResetRocketMotionInMenu()
+    private bool DoesRocketUseUpdateSkin(GameObject rocket)
     {
-        if (!IsMenuScene()) return;
-
-#if UNITY_2023_1_OR_NEWER
-        RocketController[] controllers = Object.FindObjectsByType<RocketController>(FindObjectsSortMode.None);
-#else
-        RocketController[] controllers = Object.FindObjectsOfType<RocketController>();
-#endif
-        for (int i = 0; i < controllers.Length; i++)
-        {
-            RocketController c = controllers[i];
-            if (c == null) continue;
-            c.enableMovement = false;
-            if (c.rb != null)
-            {
-                c.rb.linearVelocity = Vector2.zero;
-                c.rb.angularVelocity = 0f;
-            }
-        }
-
-        GameObject[] rockets = GameObject.FindGameObjectsWithTag("RocketShip");
-        for (int i = 0; i < rockets.Length; i++)
-        {
-            GameObject go = rockets[i];
-            if (go == null) continue;
-            Rigidbody2D rb = go.GetComponent<Rigidbody2D>();
-            if (rb != null)
-            {
-                rb.linearVelocity = Vector2.zero;
-                rb.angularVelocity = 0f;
-            }
-        }
+        return rocket != null && rocket.GetComponent<UpdateSkin>() != null;
     }
 }

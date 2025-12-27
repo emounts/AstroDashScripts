@@ -14,6 +14,10 @@ public class CelestialObjectController : MonoBehaviour
     [Header("Timing")]
     [Tooltip("Seconds of rocket travel before object becomes visible.")]
     public float timeAppear = 0f;
+    [Tooltip("If true, ignore time and spawn once the rocket reaches this world-space height.")]
+    public bool useHeightGate = false;
+    [Tooltip("World-space Y the rocket must reach before this object appears.")]
+    public float appearHeight = 100f;
 
     [Header("Parallax / Tracking")]
     [Tooltip("Controls how much the object tracks the rocket's X-position.\n0 = Perfectly stationary in the world.\n100 = Tracks the rocket's X-position perfectly.")]
@@ -24,6 +28,9 @@ public class CelestialObjectController : MonoBehaviour
     
     [Tooltip("World-space Y offset above the rocket to spawn when appearing.")]
     public float spawnYOffset = 10f;
+
+    [Tooltip("If true, the object keeps its scene position on start instead of spawning off-screen.")]
+    public bool manualPlacement = false;
 
     [Tooltip("How slowly the object drifts down relative to the camera after the player has crashed.")]
     public float postDeathDriftSpeed = 0.1f;
@@ -50,11 +57,17 @@ public class CelestialObjectController : MonoBehaviour
     // The world-space X-coordinate that represents a stationary (sizeScaling=0) position.
     private float _worldAnchorX;
     private bool _hasBeenPlaced;
+    private bool _hasCompletedPass; // Track if we've already flown by
     private bool _isPlayerDead;
     private Vector3 _lastCameraPos;
+    private Vector3 _initialWorldPosition; // Stores the starting position for manual placement
 
+    
     private void Awake()
     {
+        // Force Earth to always be manual placement
+        if (CompareTag("Earth")) manualPlacement = true;
+
         // Resolve references
         if (skinManager == null) skinManager = SkinManager.Instance;
         if (targetCamera == null) targetCamera = Camera.main;
@@ -65,26 +78,55 @@ public class CelestialObjectController : MonoBehaviour
         SetVisible(false);
         _enableTime = Time.time;
         
-        // Ensure the object starts offscreen
-        InitialPlacement();
+        if (manualPlacement)
+        {
+            // Use the object's current scene position as its anchor
+            _worldAnchorX = transform.position.x;
+            _initialWorldPosition = transform.position; // Store initial position
+            _hasBeenPlaced = true;
+            // If manual, we likely want it visible immediately if it's in view
+            SetVisible(true);
+        }
+        else
+        {
+            // Ensure the object starts offscreen
+            InitialPlacement();
+        }
     }
 
     private void OnEnable()
     {
+        GameManagerRS gm = FindFirstObjectByType<GameManagerRS>();
+        if (gm != null) gm.RegisterPlanet(this);
+
         // Reset state for object pooling
         _rocket = ResolveRocket();
-        _hasBeenPlaced = false;
         _isStarted = false;
         _isPlayerDead = false;
         _enableTime = Time.time;
-        SetVisible(false);
+
+        if (manualPlacement)
+        {
+            _hasBeenPlaced = true;
+            SetVisible(true);
+        }
+        else
+        {
+            _hasBeenPlaced = false;
+            SetVisible(false);
+        }
 
         GameEvents.PlayerCrashed += OnPlayerCrashed;
+        GameEvents.PlayerRespawned += OnPlayerRespawned;
     }
 
     private void OnDisable()
     {
+        GameManagerRS gm = FindFirstObjectByType<GameManagerRS>();
+        if (gm != null) gm.UnregisterPlanet(this);
+
         GameEvents.PlayerCrashed -= OnPlayerCrashed;
+        GameEvents.PlayerRespawned -= OnPlayerRespawned;
     }
 
     private void OnPlayerCrashed()
@@ -96,6 +138,30 @@ public class CelestialObjectController : MonoBehaviour
         }
     }
 
+    private bool _isRespawningToBottom = false;
+
+    private void OnPlayerRespawned()
+    {
+        _isPlayerDead = false;
+        _isRespawningToBottom = true; // Set flag for InitialPlacement
+
+        if (manualPlacement)
+        {
+            transform.position = _initialWorldPosition; // Reset position
+            SetVisible(true); // Ensure visible
+            _hasBeenPlaced = true; // Ensure it's considered placed
+        }
+        else
+        {
+            // For non-manual objects, we need to re-initialize placement
+            _hasBeenPlaced = false; // This will trigger InitialPlacement in HandleVisibility
+            SetVisible(false); // Hide until InitialPlacement runs and makes it visible
+        }
+        
+        // Allow the object to appear again if it drifted off screen while dead
+        _hasCompletedPass = false;
+    }
+
 
     private void Update()
     {
@@ -105,12 +171,6 @@ public class CelestialObjectController : MonoBehaviour
         if (_rocket == null || targetCamera == null)
         {
             return; // Cannot proceed without rocket or camera
-        }
-
-        // Place the object once the rocket is available
-        if (!_hasBeenPlaced)
-        {
-            InitialPlacement();
         }
 
         // Determine if the object should be visible based on timing
@@ -206,10 +266,35 @@ public class CelestialObjectController : MonoBehaviour
         // Position the object high above the rocket, just out of view.
         float camHalfHeight = targetCamera.orthographic ? targetCamera.orthographicSize : 5f;
         float objHalfHeight = _renderers.Length > 0 ? _renderers[0].bounds.extents.y : 0.5f;
-        float spawnY = _rocket.position.y + camHalfHeight + objHalfHeight + spawnYOffset;
+        
+        // Calculate the standard offset used for spawning
+        float standardOffset = camHalfHeight + objHalfHeight + spawnYOffset;
+
+        float spawnY;
+        
+        if (useHeightGate && _rocket.position.y > appearHeight)
+        {
+            // If we are using a height gate and the rocket is already past it (e.g. respawn),
+            // calculate where the object *should* be based on how far the rocket has traveled.
+            
+            // The position it would have had if the rocket was exactly at appearHeight
+            float virtualStartY = appearHeight + standardOffset;
+            
+            // The distance the rocket has traveled past the trigger
+            float distanceTraveled = _rocket.position.y - appearHeight;
+            
+            // The distance the object should have traveled
+            float objectTravel = distanceTraveled * relativeSpeedFactor;
+            
+            spawnY = virtualStartY + objectTravel;
+        }
+        else
+        {
+            // Standard behavior: spawn relative to current rocket position
+            spawnY = _rocket.position.y + standardOffset;
+        }
 
         transform.position = new Vector3(_worldAnchorX, spawnY, 0f);
-        _hasBeenPlaced = true;
     }
 
     /// <summary>
@@ -217,6 +302,69 @@ public class CelestialObjectController : MonoBehaviour
     /// </summary>
     private void HandleVisibility()
     {
+        // If manual placement is on, we generally want it visible.
+        if (manualPlacement)
+        {
+             // If height gate is NOT used, force visible.
+             if (!useHeightGate)
+             {
+                 if (!_isVisible) SetVisible(true);
+                 _isStarted = true;
+                 return;
+             }
+             // If height gate IS used, we fall through to the logic below, 
+             // but we ensure we are considered "placed".
+             _hasBeenPlaced = true;
+        }
+
+        if (useHeightGate)
+        {
+            // Rocket is below the gate. Reset state so we can appear again when we climb back up.
+            bool passedHeight = _rocket.position.y >= appearHeight;
+            if (!passedHeight)
+            {
+                if (_isVisible) SetVisible(false);
+                if (!manualPlacement) _hasBeenPlaced = false; 
+                _hasCompletedPass = false; // Allow a new pass since we fell below
+                return;
+            }
+
+            // STRICT CHECK: If we have already finished this pass (flown off screen), DO NOT RESPWAN.
+            if (_hasCompletedPass) 
+            {
+                if (_isVisible) SetVisible(false); // Ensure it stays hidden
+                return;
+            }
+
+            // Ensure placement before showing.
+            if (!_hasBeenPlaced)
+            {
+                InitialPlacement();
+            }
+
+            if (!_isVisible)
+            {
+                SetVisible(true);
+            }
+            _isStarted = true;
+            return;
+        }
+
+        // --- Standard Logic (No Height Gate) ---
+
+        // If we have already finished this pass (flown off screen), DO NOT RESPWAN until reset.
+        if (_hasCompletedPass)
+        {
+            if (_isVisible) SetVisible(false);
+            return;
+        }
+
+        // Fix: If we haven't been placed yet (e.g. cleared by OnEnable), place us now.
+        if (!_hasBeenPlaced)
+        {
+            InitialPlacement();
+        }
+
         // Detect when the rocket starts traveling.
         if (!_isStarted)
         {
@@ -230,7 +378,9 @@ public class CelestialObjectController : MonoBehaviour
         }
 
         float travelElapsed = _isStarted ? Time.time - _appearStartTime : 0f;
-        bool shouldBeVisible = _hasBeenPlaced && (timeAppear <= 0f || travelElapsed >= timeAppear);
+        // If manual placement is on, we ignore timeAppear logic (it was handled at top),
+        // but if we are here, we might be standard logic.
+        bool shouldBeVisible = _hasBeenPlaced && (manualPlacement || timeAppear <= 0f || travelElapsed >= timeAppear);
 
         if (shouldBeVisible != _isVisible)
         {
@@ -264,12 +414,9 @@ public class CelestialObjectController : MonoBehaviour
 
     private float SampleRocketUpSpeed()
     {
-        if (_rocket == null) return GameConstants.RocketInitialSpeed;
+        if (_rocket == null) return 0f;
         Rigidbody2D rb = _rocket.GetComponent<Rigidbody2D>();
-        float vy = rb != null ? rb.linearVelocity.y : 0f;
-        if (vy <= 0.01f)
-            vy = GameConstants.RocketInitialSpeed;
-        return vy;
+        return rb != null ? rb.linearVelocity.y : 0f;
     }
     
     private void CheckAndDestroyIfOffscreen()

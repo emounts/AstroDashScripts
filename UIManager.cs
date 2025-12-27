@@ -2,88 +2,89 @@ using UnityEngine;
 using TMPro;
 using System.Collections;
 
-/// <summary>
-/// Manages UI elements for the game scene, such as the checkpoint notification.
-/// </summary>
 public class UIManager : MonoBehaviour
 {
     public static UIManager Instance { get; private set; }
 
-    [Header("UI Elements")]
-    [Tooltip("The TextMeshProUGUI element that displays 'Checkpoint Reached'.")]
-    public TextMeshProUGUI checkpointText;
-
-    [Header("Animation Settings")]
-    [Tooltip("How long the text stays fully visible before fading.")]
-    public float textVisibleDuration = 1f;
-    [Tooltip("How long it takes for the text to fade out.")]
-    public float textFadeDuration = 0.5f;
+    [Header("In-Game Messages")]
+    [Tooltip("The TextMeshProUGUI component used for general in-game text.")]
+    [SerializeField] private TextMeshProUGUI generalMessageText;
     
-    private Coroutine _fadeCoroutine;
+    [Tooltip("The TextMeshProUGUI component specifically for checkpoint messages.")]
+    [SerializeField] private TextMeshProUGUI checkpointMessageText;
+    
+    [SerializeField] private float defaultFadeDuration = 1f;
 
-    private void OnEnable()
-    {
-        GameEvents.CheckpointReached += ShowCheckpointMessage;
-    }
-
-    private void OnDisable()
-    {
-        GameEvents.CheckpointReached -= ShowCheckpointMessage;
-    }
+    private Coroutine currentFadeRoutine;
 
     private void Awake()
     {
-        // Singleton pattern implementation
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
+            return;
         }
-        else
-        {
-            Instance = this;
-        }
+        Instance = this;
 
-        // Ensure the text is invisible on start.
-        if (checkpointText != null)
+        if (generalMessageText != null)
         {
-            checkpointText.alpha = 0f;
+            generalMessageText.alpha = 0f;
+            generalMessageText.gameObject.SetActive(false);
+        }
+        if (checkpointMessageText != null)
+        {
+            checkpointMessageText.alpha = 0f;
+            checkpointMessageText.gameObject.SetActive(false);
         }
     }
 
-    /// <summary>
-    /// Displays the 'Checkpoint Reached' message and then fades it out.
-    /// </summary>
-    public void ShowCheckpointMessage()
+    public void ShowCheckpointMessage(string text, float duration = 2f)
     {
-        if (checkpointText == null) return;
-        
-        // If a fade is already in progress, stop it to start a new one.
-        if (_fadeCoroutine != null)
-        {
-            StopCoroutine(_fadeCoroutine);
-        }
-        
-        _fadeCoroutine = StartCoroutine(FadeCheckpointText());
+        // Use checkpoint-specific text if assigned, otherwise fallback to general
+        TextMeshProUGUI targetText = checkpointMessageText != null ? checkpointMessageText : generalMessageText;
+        ShowMessageOnText(targetText, text, duration);
     }
 
-    private IEnumerator FadeCheckpointText()
+    public void ShowMessage(string text, float duration)
     {
-        // Instantly make the text fully visible.
-        checkpointText.alpha = 1f;
+        ShowMessageOnText(generalMessageText, text, duration);
+    }
 
-        // Wait for the specified duration.
-        yield return new WaitForSeconds(textVisibleDuration);
+    private void ShowMessageOnText(TextMeshProUGUI textObj, string text, float duration)
+    {
+        if (textObj == null) return;
 
-        // Fade the text out.
-        float elapsedTime = 0f;
-        while (elapsedTime < textFadeDuration)
+        textObj.text = text;
+        textObj.gameObject.SetActive(true);
+        textObj.alpha = 1f;
+
+        // Note: This simple implementation stops any *global* fade routine. 
+        // If we want multiple simultaneous texts, we'd need per-text coroutines. 
+        // For now, assuming single-channel UI focus is fine or user assigns different objects.
+        if (currentFadeRoutine != null)
         {
-            elapsedTime += Time.deltaTime;
-            checkpointText.alpha = 1f - Mathf.Clamp01(elapsedTime / textFadeDuration);
+            StopCoroutine(currentFadeRoutine);
+        }
+        currentFadeRoutine = StartCoroutine(FadeTextRoutine(textObj, duration));
+    }
+
+    private IEnumerator FadeTextRoutine(TextMeshProUGUI textObj, float waitDuration)
+    {
+        yield return new WaitForSeconds(waitDuration);
+
+        float elapsed = 0f;
+        float startAlpha = textObj.alpha;
+
+        while (elapsed < defaultFadeDuration)
+        {
+            elapsed += Time.deltaTime;
+            float newAlpha = Mathf.Lerp(startAlpha, 0f, elapsed / defaultFadeDuration);
+            textObj.alpha = newAlpha;
             yield return null;
         }
 
-        // Ensure alpha is exactly 0 at the end.
-        checkpointText.alpha = 0f;
+        textObj.alpha = 0f;
+        textObj.gameObject.SetActive(false);
+        currentFadeRoutine = null;
     }
 }

@@ -70,10 +70,21 @@ public class RocketController : MonoBehaviour
         // Speeds are enforced globally; ignore per-skin speed overrides.
         initialSpeed = GameConstants.RocketInitialSpeed;
         finalSpeed = GameConstants.RocketFinalSpeed;
-        maxHeightSpeedIncrease = skin.movement.maxHeightSpeedIncrease;
-        verticalSpeedMultiplier = skin.movement.verticalSpeedMultiplier;
+
+        // Only apply skin overrides if they are set (non-zero/valid), otherwise preserve existing defaults.
+        if (skin.movement.maxHeightSpeedIncrease > 0)
+            maxHeightSpeedIncrease = skin.movement.maxHeightSpeedIncrease;
+        
+        if (skin.movement.verticalSpeedMultiplier > 0)
+            verticalSpeedMultiplier = skin.movement.verticalSpeedMultiplier;
+        
+        // For booleans, we can't distinguish "false" from "uninitialized", so we take the value.
+        // (Assuming false is a safe default for gameplay).
         useMouseInput = skin.movement.useMouseInput;
-        keyboardKey = skin.movement.keyboardKey;
+        
+        if (skin.movement.keyboardKey != KeyCode.None)
+            keyboardKey = skin.movement.keyboardKey;
+            
         _legacySpeedsAdjusted = false;
         MaybeConvertLegacySpeeds();
     }

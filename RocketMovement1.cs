@@ -15,6 +15,8 @@ public class RocketMovement1 : MonoBehaviour
     [Header("Optional: data-driven")]
     [SerializeField] private SkinManager skinManager;
     private RocketController _controller;
+    private GameObject _currentDestructible;
+    private GameObject _currentExplosion;
 
     private void Awake()
     {
@@ -37,6 +39,8 @@ public class RocketMovement1 : MonoBehaviour
         _controller.finalSpeed = GameConstants.RocketFinalSpeed;
         _controller.maxHeightSpeedIncrease = maxHeightSpeedIncrease;
         _controller.verticalSpeedMultiplier = 2f;
+        _controller.flyStraightOnStart = true;
+        _controller.requireFirstInputToStart = true; 
 
         if (skinManager != null && skinManager.CurrentSkin != null)
             _controller.ApplySkinTuning(skinManager.CurrentSkin);
@@ -48,8 +52,8 @@ public class RocketMovement1 : MonoBehaviour
         GameObject otherObj = collision.gameObject;
         if (otherObj.tag == "Meteor")
         {
-            ExplodeRocketShip();
             GameEvents.RaisePlayerCrashed();
+            ExplodeRocketShip();
         }
     }
 
@@ -57,12 +61,14 @@ public class RocketMovement1 : MonoBehaviour
     {
         if (destructableShip != null)
         {
-            GameObject destructable = (GameObject)Instantiate(destructableShip);
-            destructable.transform.position = transform.position;
+            _currentDestructible = (GameObject)Instantiate(destructableShip);
+            _currentDestructible.transform.position = transform.position;
         }
 
         if (explosionEffect != null)
-            Instantiate(explosionEffect, transform.position, transform.rotation);
+        {
+            _currentExplosion = Instantiate(explosionEffect, transform.position, transform.rotation);
+        }
 
         if (rocketShip1 != null && rocketShip1.tag == "RocketShip")
             gameObject.SetActive(false);
@@ -70,20 +76,34 @@ public class RocketMovement1 : MonoBehaviour
 
     public void Respawn()
     {
+        // Cleanup debris
+        if (_currentDestructible != null)
+        {
+            Destroy(_currentDestructible);
+            _currentDestructible = null;
+        }
+        if (_currentExplosion != null)
+        {
+            Destroy(_currentExplosion);
+            _currentExplosion = null;
+        }
+
         // Reactivate the rocket ship visuals.
         if (rocketShip1 != null)
         {
             rocketShip1.SetActive(true);
         }
         gameObject.SetActive(true);
-
-        // Reset movement state.
-        direction = Vector2.left;
+        transform.rotation = Quaternion.identity; // Reset orientation
         if (rb != null)
         {
+            rb.SetRotation(0f); // Explicitly reset physics rotation
             rb.linearVelocity = Vector2.zero;
             rb.angularVelocity = 0f;
         }
+
+        // Reset movement state.
+        direction = Vector2.left;
 
         // Reset the controller's direction.
         if (_controller != null)

@@ -22,10 +22,16 @@ public class FollowRocketShip : MonoBehaviour
     void Update()
     {
         if (skinManager == null) skinManager = SkinManager.Instance;
-        if (skinManager != null && skinManager.CurrentRocketTransform != null)
+        
+        // Prioritize SkinManager
+        if (skinManager != null)
         {
-            transform.position = skinManager.CurrentRocketTransform.position + offset;
-            return;
+            Transform t = skinManager.CurrentRocketTransform;
+            if (t != null)
+            {
+                transform.position = t.position + offset;
+                return;
+            }
         }
 
         // Legacy fallback

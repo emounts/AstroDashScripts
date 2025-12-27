@@ -60,6 +60,10 @@ public class RocketSkin : ScriptableObject
     public GameObject rocketPrefab;
     public Sprite uiSprite;
 
+    [Header("Menu Appearance")]
+    [Tooltip("Scale multiplier for this rocket when shown in the menu/skin selector.")]
+    public float menuScale = 1.0f;
+
     [Header("Unlocking")]
     public UnlockRequirement unlockRequirement;
     [Tooltip("Optional per-skin override for locking/unlocking without changing score logic.")]

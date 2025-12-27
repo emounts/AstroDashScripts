@@ -1,7 +1,6 @@
 using UnityEngine;
-using System.Collections;
 
-[ExecuteInEditMode]
+[ExecuteAlways]
 public class AnchorGameObject : MonoBehaviour
 {
     public enum AnchorType
@@ -15,99 +14,52 @@ public class AnchorGameObject : MonoBehaviour
         TopLeft,
         TopCenter,
         TopRight,
-    };
+    }
 
-    public bool executeInUpdate;
+    [Tooltip("Update anchor every frame. Turn this on for gameplay.")]
+    public bool executeInUpdate = true;
 
     public AnchorType anchorType;
     public Vector3 anchorOffset;
 
-    IEnumerator updateAnchorRoutine; //Coroutine handle so we don't start it if it's already running
+    [Tooltip("How close is 'close enough' before we stop moving (prevents micro-jitter).")]
+    public float positionEpsilon = 0.0001f;
 
-    // Use this for initialization
-    void Start()
+    void OnEnable()
     {
-        updateAnchorRoutine = UpdateAnchorAsync();
-        StartCoroutine(updateAnchorRoutine);
+        // Do one placement immediately
+        ApplyAnchor();
     }
 
-    /// <summary>
-    /// Coroutine to update the anchor only once CameraFit.Instance is not null.
-    /// </summary>
-    IEnumerator UpdateAnchorAsync()
+    // Use LateUpdate so this runs AFTER the camera has finished moving for the frame.
+    void LateUpdate()
     {
-
-        uint cameraWaitCycles = 0;
-
-        while (CameraViewpointHandler.Instance == null)
-        {
-            ++cameraWaitCycles;
-            yield return new WaitForEndOfFrame();
-        }
-
-        if (cameraWaitCycles > 0)
-        {
-            print(string.Format("CameraAnchor found CameraFit instance after waiting {0} frame(s). " +
-                "You might want to check that CameraFit has an earlie execution order.", cameraWaitCycles));
-        }
-
-        UpdateAnchor();
-        updateAnchorRoutine = null;
-
+        if (executeInUpdate)
+            ApplyAnchor();
     }
 
-    void UpdateAnchor()
+    void ApplyAnchor()
     {
-        switch (anchorType)
-        {
-            case AnchorType.BottomLeft:
-                SetAnchor(CameraViewpointHandler.Instance.BottomLeft);
-                break;
-            case AnchorType.BottomCenter:
-                SetAnchor(CameraViewpointHandler.Instance.BottomCenter);
-                break;
-            case AnchorType.BottomRight:
-                SetAnchor(CameraViewpointHandler.Instance.BottomRight);
-                break;
-            case AnchorType.MiddleLeft:
-                SetAnchor(CameraViewpointHandler.Instance.MiddleLeft);
-                break;
-            case AnchorType.MiddleCenter:
-                SetAnchor(CameraViewpointHandler.Instance.MiddleCenter);
-                break;
-            case AnchorType.MiddleRight:
-                SetAnchor(CameraViewpointHandler.Instance.MiddleRight);
-                break;
-            case AnchorType.TopLeft:
-                SetAnchor(CameraViewpointHandler.Instance.TopLeft);
-                break;
-            case AnchorType.TopCenter:
-                SetAnchor(CameraViewpointHandler.Instance.TopCenter);
-                break;
-            case AnchorType.TopRight:
-                SetAnchor(CameraViewpointHandler.Instance.TopRight);
-                break;
-        }
-    }
+        var handler = CameraViewpointHandler.Instance;
+        if (handler == null) return;
 
-    void SetAnchor(Vector3 anchor)
-    {
-        Vector3 newPos = anchor + anchorOffset;
-        if (!transform.position.Equals(newPos))
+        Vector3 anchor = anchorType switch
         {
-            transform.position = newPos;
-        }
-    }
+            AnchorType.BottomLeft => handler.BottomLeft,
+            AnchorType.BottomCenter => handler.BottomCenter,
+            AnchorType.BottomRight => handler.BottomRight,
+            AnchorType.MiddleLeft => handler.MiddleLeft,
+            AnchorType.MiddleCenter => handler.MiddleCenter,
+            AnchorType.MiddleRight => handler.MiddleRight,
+            AnchorType.TopLeft => handler.TopLeft,
+            AnchorType.TopCenter => handler.TopCenter,
+            _ => handler.TopRight,
+        };
 
-#if UNITY_EDITOR
-    // Update is called once per frame
-    void Update()
-    {
-        if (updateAnchorRoutine == null && executeInUpdate)
-        {
-            updateAnchorRoutine = UpdateAnchorAsync();
-            StartCoroutine(updateAnchorRoutine);
-        }
+        Vector3 target = anchor + anchorOffset;
+
+        // Avoid Equals. Use a tolerance.
+        if ((transform.position - target).sqrMagnitude > positionEpsilon * positionEpsilon)
+            transform.position = target;
     }
-#endif
 }

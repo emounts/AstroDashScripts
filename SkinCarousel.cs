@@ -1,53 +1,74 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 
-// Scalable skin selector UI driver.
+/// <summary>
+/// Spawns and positions 3 preview items (prev, selected, next) when the skin menu is open.
+/// It enables PreviewItemContainer on open, generates preview clones on first open,
+/// and repositions them on open and on selection changes.
+/// </summary>
 public class SkinCarousel : MonoBehaviour
 {
     private static readonly HashSet<SkinCarousel> ActiveCarousels = new HashSet<SkinCarousel>();
     public static bool SelectionOpen => ActiveCarousels.Count > 0;
 
-    public static bool AnyOpen() => SelectionOpen;
-
     [Header("Dependencies")]
     [SerializeField] private SkinManager skinManager;
 
-    [Header("Preview Objects (Optional)")]
-    [SerializeField] private List<Transform> previewItems = new List<Transform>();
+    [Header("Preview Objects (Dynamic Generation)")]
+    [SerializeField] private Transform previewItemContainer;
 
-    [Header("Layout")]
-    [SerializeField] private Vector3 downLeft = new Vector3(-1.9f, -0.5f, 0f);
-    [SerializeField] private Vector3 upMiddle = new Vector3(0f, 0f, 0f);
-    [SerializeField] private Vector3 downRight = new Vector3(1.9f, -0.5f, 0f);
-    [SerializeField] private Vector3 outOfView = new Vector3(20f, 0f, 0f);
+    [Tooltip("Optional: used only if a skin has no rocket prefab and you want a UI Image fallback.")]
+    [SerializeField] private Image previewImagePrefab;
 
-    [Header("Optional: hide gameplay rocket while selecting")]
-    [SerializeField] private List<GameObject> rocketsToHide = new List<GameObject>();
-    private readonly List<GameObject> _hiddenDuringCarousel = new List<GameObject>();
-    private readonly List<(Rigidbody2D body, bool prevSimulated, Vector2 prevVelocity)> _hiddenBodies = new List<(Rigidbody2D, bool, Vector2)>();
+    [Header("Preview Item Settings")]
+    [SerializeField] private Vector3 baseItemScale = Vector3.one;
+    [SerializeField] private int previewSortingOrder = 10;
 
-    [Header("Optional: disable start controls while selecting")]
-    [SerializeField] private List<GameObject> startObjectsToDisable = new List<GameObject>();
-    private readonly List<GameObject> _disabledStartObjects = new List<GameObject>();
+    [Header("Layout Anchors (Optional)")]
+    [Tooltip("If set, these world transforms define the target positions for left/center/right preview items.")]
+    [SerializeField] private Transform leftTransform;
 
-    [Header("Optional: pause movement on preview rockets")]
-    [SerializeField] private bool freezePreviewMovement = true;
-    private readonly List<(RocketController controller, bool prevEnabled)> _frozenControllers = new List<(RocketController, bool)>();
-    private readonly List<(Rigidbody2D body, bool prevSimulated, Vector2 prevVelocity)> _frozenBodies = new List<(Rigidbody2D, bool, Vector2)>();
+    [SerializeField] private Transform centerTransform;
+    [SerializeField] private Transform rightTransform;
+
+    [Header("Fallback Local Layout (used if anchors are not set)")]
+    [SerializeField] private Vector3 centerLocalPosition = new Vector3(0f, 2.50f, 0f);
+    [SerializeField] private Vector3 leftLocalPosition = new Vector3(-2.20f, 1.20f, 0f);
+    [SerializeField] private Vector3 rightLocalPosition = new Vector3(2.20f, 1.20f, 0f);
+
+    [SerializeField] private Vector3 centerScale = new Vector3(1.5f, 1.5f, 1.5f);
+    [SerializeField] private Vector3 sideScale = new Vector3(1.2f, 1.2f, 1.2f);
+
+    [Header("Tint")]
+    [SerializeField] private Color centerTint = Color.white;
+    [SerializeField] private Color sideTint = Color.gray;
+
+    private readonly List<Transform> previewItems = new List<Transform>();
+    private bool generated;
 
     private void Awake()
     {
-        if (skinManager == null) skinManager = SkinManager.Instance;
+        if (skinManager == null)
+            skinManager = SkinManager.Instance;
     }
 
     private void OnEnable()
     {
         ActiveCarousels.Add(this);
-        HideGameplayRockets();
-        DisableStartObjects();
-        if (freezePreviewMovement)
-            FreezePreviewControllers();
+
+        EnsurePreviewContainerEnabled();
+
+        // Generate preview clones the first time the menu becomes active.
+        if (!generated)
+        {
+            GeneratePreviewItems();
+            generated = true;
+        }
+
         GameEvents.SkinChanged += OnSkinChanged;
+
+        // Always refresh when menu opens so positions update after activation.
         Refresh();
     }
 
@@ -55,281 +76,244 @@ public class SkinCarousel : MonoBehaviour
     {
         ActiveCarousels.Remove(this);
         GameEvents.SkinChanged -= OnSkinChanged;
-        ShowGameplayRockets();
-        EnableStartObjects();
-        if (freezePreviewMovement)
-            RestorePreviewControllers();
     }
 
-    private void Update()
+    private void EnsurePreviewContainerEnabled()
     {
-        // Extra safety: if the carousel stays open and some other script reactivates rockets, re-hide/re-freeze.
-        if (SelectionOpen)
+        if (previewItemContainer == null) return;
+
+        if (!previewItemContainer.gameObject.activeSelf)
+            previewItemContainer.gameObject.SetActive(true);
+    }
+
+    private void GeneratePreviewItems()
+    {
+        if (previewItemContainer == null)
         {
-            HideGameplayRockets();
-            if (freezePreviewMovement)
-                FreezePreviewControllers();
+            Debug.LogWarning("[SkinCarousel] PreviewItemContainer is not assigned.");
+            return;
         }
-    }
 
-    private void Start()
-    {
-        Refresh();
+        if (skinManager == null)
+        {
+            Debug.LogWarning("[SkinCarousel] SkinManager is not assigned.");
+            return;
+        }
+
+        if (!skinManager.HasSkins)
+        {
+            Debug.LogWarning("[SkinCarousel] SkinManager reports no skins.");
+            return;
+        }
+
+        // Clear old clones if any
+        for (int i = 0; i < previewItems.Count; i++)
+        {
+            if (previewItems[i] != null)
+                Destroy(previewItems[i].gameObject);
+        }
+        previewItems.Clear();
+
+        // Create one preview object per skin index (we will activate only 3 at a time)
+        for (int i = 0; i < skinManager.SkinCount; i++)
+        {
+            RocketSkin skin = skinManager.GetSkinAt(i);
+            if (skin == null)
+            {
+                previewItems.Add(null);
+                continue;
+            }
+
+            GameObject previewGo = null;
+
+            // Preferred: spawn the rocket prefab
+            if (skin.rocketPrefab != null)
+            {
+                previewGo = Instantiate(skin.rocketPrefab, previewItemContainer, worldPositionStays: false);
+
+                // Start neutral, Refresh() will place correctly
+                previewGo.transform.localPosition = Vector3.zero;
+                previewGo.transform.localRotation = Quaternion.identity;
+                previewGo.transform.localScale = baseItemScale;
+
+                // Sorting order for all SpriteRenderers so it appears above background/UI
+                var renderers = previewGo.GetComponentsInChildren<SpriteRenderer>(true);
+                foreach (var sr in renderers)
+                    sr.sortingOrder = previewSortingOrder;
+
+                // Disable physics and gameplay movement scripts for previews
+                var rb2d = previewGo.GetComponent<Rigidbody2D>();
+                if (rb2d != null)
+                {
+                    rb2d.simulated = false;
+                    rb2d.linearVelocity = Vector2.zero;
+                    rb2d.angularVelocity = 0f;
+                }
+
+                var rocketController = previewGo.GetComponent<RocketController>();
+                if (rocketController != null)
+                {
+                    rocketController.enableMovement = false;
+                    rocketController.enabled = false;
+                }
+
+                var move1 = previewGo.GetComponent<RocketMovement1>();
+                if (move1 != null) move1.enabled = false;
+
+                var moveMenu = previewGo.GetComponent<RocketMovementMenu>();
+                if (moveMenu != null) moveMenu.enabled = false;
+
+                var cols2D = previewGo.GetComponentsInChildren<Collider2D>(true);
+                foreach (var c in cols2D) c.enabled = false;
+
+                var cols3D = previewGo.GetComponentsInChildren<Collider>(true);
+                foreach (var c in cols3D) c.enabled = false;
+
+                // Keep Animator enabled so idle animations play if present
+                var anim = previewGo.GetComponent<Animator>();
+                if (anim != null) anim.enabled = true;
+            }
+            else if (skin.uiSprite != null && previewImagePrefab != null)
+            {
+                // Fallback: UI image preview if no prefab exists
+                Image img = Instantiate(previewImagePrefab, previewItemContainer);
+                img.sprite = skin.uiSprite;
+                img.preserveAspect = true;
+                previewGo = img.gameObject;
+                previewGo.transform.localScale = baseItemScale;
+            }
+            else
+            {
+                // Nothing to show for this skin
+                previewGo = new GameObject($"SkinPreview_{i}_Empty");
+                previewGo.transform.SetParent(previewItemContainer, false);
+                previewGo.SetActive(false);
+            }
+
+            previewGo.name = $"SkinPreview_{i}";
+            previewGo.SetActive(false);
+            previewItems.Add(previewGo.transform);
+        }
+
+        Debug.Log($"[SkinCarousel] Generated {previewItems.Count} preview items.");
     }
 
     public void Next()
     {
-        if (skinManager != null)
-        {
-            skinManager.Next();
-        }
-        else
-        {
-            int selected = PlayerPrefs.GetInt(GameConstants.PrefSkinMenuPosition, 0);
-            int max = previewItems != null && previewItems.Count > 0 ? previewItems.Count - 1 : 0;
-            selected = Mathf.Min(selected + 1, max);
-            PlayerPrefs.SetInt(GameConstants.PrefSkinMenuPosition, selected);
-            GameEvents.RaiseSkinChanged(null);
-        }
+        if (skinManager == null) return;
+
+        int selected = skinManager.CurrentIndex;
+        int max = Mathf.Max(0, previewItems.Count - 1);
+        int next = Mathf.Min(selected + 1, max);
+
+        skinManager.SelectIndex(next);
         Refresh();
     }
 
     public void Previous()
     {
-        if (skinManager != null)
-        {
-            skinManager.Previous();
-        }
-        else
-        {
-            int selected = PlayerPrefs.GetInt(GameConstants.PrefSkinMenuPosition, 0);
-            selected = Mathf.Max(selected - 1, 0);
-            PlayerPrefs.SetInt(GameConstants.PrefSkinMenuPosition, selected);
-            GameEvents.RaiseSkinChanged(null);
-        }
+        if (skinManager == null) return;
+
+        int selected = skinManager.CurrentIndex;
+        int prev = Mathf.Max(selected - 1, 0);
+
+        skinManager.SelectIndex(prev);
         Refresh();
     }
 
     public void Refresh()
     {
-        if (previewItems == null || previewItems.Count == 0) return;
+        EnsurePreviewContainerEnabled();
 
-        // If the carousel stays enabled across menu toggles, ensure we still hide/freeze things.
-        if (SelectionOpen && _hiddenDuringCarousel.Count == 0)
-            HideGameplayRockets();
-        if (freezePreviewMovement && SelectionOpen && _frozenControllers.Count == 0 && _frozenBodies.Count == 0)
-            FreezePreviewControllers();
-
-        int selected = skinManager != null ? skinManager.CurrentIndex : PlayerPrefs.GetInt(GameConstants.PrefSkinMenuPosition, 0);
-        int clamped = Mathf.Clamp(selected, 0, previewItems.Count - 1);
-
-        // Keep selection consistent with what we can actually preview.
-        if (skinManager != null && clamped != skinManager.CurrentIndex)
+        if (skinManager == null || previewItems.Count == 0)
         {
-            skinManager.SelectIndex(clamped);
-            selected = skinManager.CurrentIndex;
-        }
-        else
-        {
-            selected = clamped;
-            if (skinManager == null)
-                PlayerPrefs.SetInt(GameConstants.PrefSkinMenuPosition, selected);
-        }
-
-        for (int i = 0; i < previewItems.Count; i++)
-        {
-            Transform tr = previewItems[i];
-            if (tr == null) continue;
-
-            Vector3 target;
-            if (i == selected)
-                target = upMiddle;
-            else if (i == selected - 1)
-                target = downLeft;
-            else if (i == selected + 1)
-                target = downRight;
-            else
-                target = outOfView;
-
-            RectTransform rt = tr as RectTransform;
-            if (rt != null)
-                rt.anchoredPosition3D = target;
-            else
-                tr.localPosition = target;
-
-            // Ensure all preview items are visible while selecting skins.
-            if (!tr.gameObject.activeSelf)
-                tr.gameObject.SetActive(true);
-        }
-    }
-
-    public void RegisterPreviewItem(Transform item)
-    {
-        if (item == null) return;
-        if (!previewItems.Contains(item)) previewItems.Add(item);
-    }
-
-    public int PreviewCount => previewItems != null ? previewItems.Count : 0;
-    public Transform GetPreviewAt(int index)
-    {
-        if (previewItems == null) return null;
-        if (index < 0 || index >= previewItems.Count) return null;
-        return previewItems[index];
-    }
-
-    private void HideGameplayRockets()
-    {
-        _hiddenDuringCarousel.Clear();
-        _hiddenBodies.Clear();
-
-        // If SkinManager has a current rocket, hide it first.
-        if (skinManager != null && skinManager.CurrentRocket != null && skinManager.CurrentRocket.activeSelf)
-        {
-            GameObject go = skinManager.CurrentRocket;
-            HideAndStore(go);
-        }
-
-        if (rocketsToHide != null && rocketsToHide.Count > 0)
-        {
-            for (int i = 0; i < rocketsToHide.Count; i++)
-            {
-                GameObject go = rocketsToHide[i];
-                if (go == null) continue;
-                HideAndStore(go);
-            }
+            Debug.LogWarning("[SkinCarousel] Refresh called but SkinManager is null or no preview items exist.");
             return;
         }
 
-        // Fallback: hide any active rocket tagged RocketShip in the pregame UI.
-        GameObject[] rockets = GameObject.FindGameObjectsWithTag("RocketShip");
-        for (int i = 0; i < rockets.Length; i++)
-        {
-            GameObject go = rockets[i];
-            if (go == null) continue;
-            HideAndStore(go);
-        }
-    }
-
-    private void ShowGameplayRockets()
-    {
-        for (int i = 0; i < _hiddenDuringCarousel.Count; i++)
-        {
-            GameObject go = _hiddenDuringCarousel[i];
-            if (go == null) continue;
-            if (!go.activeSelf)
-                go.SetActive(true);
-        }
-        _hiddenDuringCarousel.Clear();
-
-        for (int i = 0; i < _hiddenBodies.Count; i++)
-        {
-            var pair = _hiddenBodies[i];
-            if (pair.body == null) continue;
-            pair.body.simulated = pair.prevSimulated;
-            pair.body.linearVelocity = pair.prevVelocity;
-        }
-        _hiddenBodies.Clear();
-    }
-
-    private void DisableStartObjects()
-    {
-        _disabledStartObjects.Clear();
-        if (startObjectsToDisable == null) return;
-
-        for (int i = 0; i < startObjectsToDisable.Count; i++)
-        {
-            GameObject go = startObjectsToDisable[i];
-            if (go == null) continue;
-            if (go.activeSelf)
-            {
-                go.SetActive(false);
-                _disabledStartObjects.Add(go);
-            }
-        }
-    }
-
-    private void EnableStartObjects()
-    {
-        for (int i = 0; i < _disabledStartObjects.Count; i++)
-        {
-            GameObject go = _disabledStartObjects[i];
-            if (go == null) continue;
-            if (!go.activeSelf)
-                go.SetActive(true);
-        }
-        _disabledStartObjects.Clear();
-    }
-
-    private void FreezePreviewControllers()
-    {
-        _frozenControllers.Clear();
-        _frozenBodies.Clear();
-        if (previewItems == null) return;
+        int selected = Mathf.Clamp(skinManager.CurrentIndex, 0, Mathf.Max(0, previewItems.Count - 1));
 
         for (int i = 0; i < previewItems.Count; i++)
         {
             Transform tr = previewItems[i];
             if (tr == null) continue;
 
-            RocketController rc = tr.GetComponentInChildren<RocketController>(includeInactive: true);
-            if (rc == null) continue;
+            bool shouldShow = (i == selected) || (i == selected - 1) || (i == selected + 1);
 
-            bool wasEnabled = rc.enableMovement;
-            _frozenControllers.Add((rc, wasEnabled));
-            rc.enableMovement = false;
-            if (rc.rb != null)
+            if (tr.gameObject.activeSelf != shouldShow)
+                tr.gameObject.SetActive(shouldShow);
+
+            if (!shouldShow) continue;
+
+            Vector3 targetLocalPos;
+            Vector3 targetScale;
+            Color targetTint;
+
+            if (i == selected)
             {
-                Rigidbody2D body = rc.rb;
-                _frozenBodies.Add((body, body.simulated, body.linearVelocity));
-                body.simulated = false;
-                body.linearVelocity = Vector2.zero;
+                targetLocalPos = ResolveTargetLocalPosition(centerTransform, centerLocalPosition);
+                targetScale = centerScale;
+                targetTint = centerTint;
             }
+            else if (i == selected - 1)
+            {
+                targetLocalPos = ResolveTargetLocalPosition(leftTransform, leftLocalPosition);
+                targetScale = sideScale;
+                targetTint = sideTint;
+            }
+            else
+            {
+                targetLocalPos = ResolveTargetLocalPosition(rightTransform, rightLocalPosition);
+                targetScale = sideScale;
+                targetTint = sideTint;
+            }
+
+            // Apply per-skin menu scale if available
+            float customMenuScale = 1.0f;
+            RocketSkin skin = skinManager.GetSkinAt(i);
+            if (skin != null)
+            {
+                // Ensure we don't scale to 0 if the user forgot to set it (older assets might be 0 if not re-serialized)
+                // However, since we defaulted to 1.0f in code, new assets will be 1.0f. 
+                // Existing assets might load as 0 until inspected? 
+                // Let's protect against 0 just in case, unless 0 is desired.
+                if (skin.menuScale > 0.001f)
+                    customMenuScale = skin.menuScale;
+            }
+
+            tr.localPosition = targetLocalPos;
+            tr.localScale = Vector3.Scale(baseItemScale, targetScale) * customMenuScale;
+            ApplyTint(tr, targetTint);
         }
+    }
+
+    private Vector3 ResolveTargetLocalPosition(Transform anchorWorld, Vector3 fallbackLocal)
+    {
+        if (previewItemContainer == null) return fallbackLocal;
+
+        // If anchor is provided, convert its world position into the preview container's local space
+        if (anchorWorld != null)
+            return previewItemContainer.InverseTransformPoint(anchorWorld.position);
+
+        return fallbackLocal;
+    }
+
+    private void ApplyTint(Transform tr, Color tint)
+    {
+        var srs = tr.GetComponentsInChildren<SpriteRenderer>(true);
+        foreach (var sr in srs) sr.color = tint;
+
+        var img = tr.GetComponent<Image>();
+        if (img != null) img.color = tint;
     }
 
     private void OnSkinChanged(RocketSkin _)
     {
-        if (!SelectionOpen) return;
-        HideGameplayRockets();
-        if (freezePreviewMovement)
-            FreezePreviewControllers();
+        // If selection changes while menu is open, reposition immediately.
+        Refresh();
     }
 
-    private void HideAndStore(GameObject go)
-    {
-        if (go == null) return;
-        if (!_hiddenDuringCarousel.Contains(go))
-            _hiddenDuringCarousel.Add(go);
-
-        Rigidbody2D rb = go.GetComponent<Rigidbody2D>();
-        if (rb != null && !_hiddenBodies.Exists(x => x.body == rb))
-        {
-            _hiddenBodies.Add((rb, rb.simulated, rb.linearVelocity));
-            rb.simulated = false;
-            rb.linearVelocity = Vector2.zero;
-        }
-
-        if (go.activeSelf)
-            go.SetActive(false);
-    }
-
-    private void RestorePreviewControllers()
-    {
-        for (int i = 0; i < _frozenControllers.Count; i++)
-        {
-            var pair = _frozenControllers[i];
-            if (pair.controller == null) continue;
-            pair.controller.enableMovement = pair.prevEnabled;
-        }
-        _frozenControllers.Clear();
-
-        for (int i = 0; i < _frozenBodies.Count; i++)
-        {
-            var pair = _frozenBodies[i];
-            if (pair.body == null) continue;
-            pair.body.simulated = pair.prevSimulated;
-            pair.body.linearVelocity = pair.prevVelocity;
-        }
-        _frozenBodies.Clear();
-    }
+    // Debug helpers (optional)
+    public int PreviewCount => previewItems.Count;
+    public Transform GetPreviewAt(int index) => (index >= 0 && index < previewItems.Count) ? previewItems[index] : null;
 }
