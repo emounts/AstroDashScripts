@@ -53,9 +53,12 @@ public class ProgressBarManager : MonoBehaviour
     private Image activeRocketTrackerImage;
 
     private const float EARTH_ICON_OFFSET = -0.03f; // 3% below actual position to appear below rocket
-    private const float PLANET_ICON_OFFSET = 0.06f; // 3% above calculated position to sit better on bar
+    private const float PLANET_ICON_OFFSET = 0.08f; // 3% above calculated position to sit better on bar
 
     private bool isPlayerDead = false;
+
+    private RectTransform planetContainer;
+    private RectTransform checkpointContainer;
 
     private void Start()
     {
@@ -145,17 +148,32 @@ public class ProgressBarManager : MonoBehaviour
         // Pausing updates when player is dead ensures icons don't drift incorrectly
         if (!isPlayerDead)
         {
-            UpdateDynamicIcons(gameManager.AllPlanets, worldMin, levelRange, planetIconPrefab, planetScale, planetFadeDuration);
-            UpdateDynamicIcons(gameManager.AllCheckpoints, worldMin, levelRange, checkpointIconPrefab, checkpointScale, checkpointFadeDuration);
-
-            // Explicitly force Checkpoints to be above Planets
-            foreach (var kvp in spawnedIcons)
+            // Ensure sorting containers exist
+            if (planetContainer == null) planetContainer = CreateLayerContainer("PlanetContainer");
+            if (checkpointContainer == null) checkpointContainer = CreateLayerContainer("CheckpointContainer");
+            
+            // Enforce explicit layer order: Planets (bottom), Checkpoints (middle), Rocket (top)
+            if (planetContainer != null) 
             {
-                if (kvp.Key is Checkpoint)
-                {
-                    kvp.Value.SetAsLastSibling();
-                }
+                planetContainer.SetAsFirstSibling();
+                // Reset Z to 0
+                Vector3 pPos = planetContainer.localPosition;
+                pPos.z = 0f;
+                planetContainer.localPosition = pPos;
             }
+            
+            if (checkpointContainer != null) 
+            {
+                checkpointContainer.SetSiblingIndex(planetContainer.GetSiblingIndex() + 1);
+                
+                // Move Checkpoints to Z=1 (requested) to potentially assist with custom sorting axes
+                Vector3 cpPos = checkpointContainer.localPosition;
+                cpPos.z = -1f;
+                checkpointContainer.localPosition = cpPos;
+            }
+
+            UpdateDynamicIcons(gameManager.AllPlanets, worldMin, levelRange, planetIconPrefab, planetScale, planetFadeDuration, planetContainer);
+            UpdateDynamicIcons(gameManager.AllCheckpoints, worldMin, levelRange, checkpointIconPrefab, checkpointScale, checkpointFadeDuration, checkpointContainer);
         }
 
         // 3. Update Rocket Icon
@@ -179,7 +197,7 @@ public class ProgressBarManager : MonoBehaviour
         }
     }
 
-    private void UpdateDynamicIcons<T>(HashSet<T> worldObjects, float worldMin, float levelRange, GameObject prefab, float scale, float fadeDuration) where T : MonoBehaviour
+    private void UpdateDynamicIcons<T>(HashSet<T> worldObjects, float worldMin, float levelRange, GameObject prefab, float scale, float fadeDuration, Transform container) where T : MonoBehaviour
     {
         if (prefab == null) return;
         if (spawnedIcons.Count > 200) return;
@@ -193,7 +211,7 @@ public class ProgressBarManager : MonoBehaviour
             // --- Instantiation ---
             if (!spawnedIcons.ContainsKey(obj))
             {
-                GameObject newIcon = Instantiate(prefab, progressBarRectTransform);
+                GameObject newIcon = Instantiate(prefab, container);
                 RectTransform rt = EnsureRectTransform(newIcon);
 
                 if (rt != null)
@@ -250,6 +268,20 @@ public class ProgressBarManager : MonoBehaviour
 
             // --- Positioning ---
             RectTransform iconRect = spawnedIcons[obj];
+            
+            // Fix: Ensure the icon is in the correct container (handles hot-reload or legacy icons)
+            if (iconRect.transform.parent != container)
+            {
+                iconRect.transform.SetParent(container, false);
+            }
+
+            // Fix: Disable any Canvas sorting overrides that might disrupt hierarchy-based sorting
+            Canvas iconCanvas = iconRect.GetComponent<Canvas>();
+            if (iconCanvas != null && iconCanvas.overrideSorting)
+            {
+                iconCanvas.overrideSorting = false;
+            }
+
             CanvasGroup canvasGroup = iconRect.GetComponent<CanvasGroup>();
             
             float normalizedPos = 0f;
@@ -400,5 +432,34 @@ public class ProgressBarManager : MonoBehaviour
         float yPos = (normalizedY - 0.5f) * barHeight;
         
         icon.anchoredPosition = new Vector2(0f, yPos);
+        
+        // Ensure Z is zero to prevent 3D sorting issues in Camera space
+        Vector3 locPos = icon.localPosition;
+        if (Mathf.Abs(locPos.z) > 0.001f)
+        {
+            locPos.z = 0f;
+            icon.localPosition = locPos;
+        }
+    }
+
+    private RectTransform CreateLayerContainer(string name)
+    {
+        if (progressBarRectTransform == null) return null;
+        
+        Transform existing = progressBarRectTransform.Find(name);
+        if (existing != null) return existing.GetComponent<RectTransform>();
+
+        GameObject container = new GameObject(name, typeof(RectTransform));
+        container.transform.SetParent(progressBarRectTransform, false);
+        RectTransform rt = container.GetComponent<RectTransform>();
+        
+        // Stretch to fill parent
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.sizeDelta = Vector2.zero;
+        rt.anchoredPosition = Vector2.zero;
+        rt.localScale = Vector3.one;
+        
+        return rt;
     }
 }

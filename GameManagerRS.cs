@@ -8,7 +8,7 @@ public class GameManagerRS : MonoBehaviour
     [SerializeField] private bool gameHasEnded = false;
     [SerializeField] private float restartDelay = 1f;
     [Tooltip("Vertical offset to apply when respawning at a checkpoint.")]
-    [SerializeField] private float respawnHeightOffset = 1.0f;
+    [SerializeField] private float respawnHeightOffset = -3f;
 
     [Header("Object References")]
     [Tooltip("Assign the player's rocket GameObject here.")]
@@ -239,6 +239,7 @@ public class GameManagerRS : MonoBehaviour
 
         if (hasCheckpoint)
         {
+            Debug.Log($"GameManagerRS: Applying Checkpoint Offset: {respawnHeightOffset}");
             respawnPos.y += respawnHeightOffset;
         }
         else

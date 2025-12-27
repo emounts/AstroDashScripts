@@ -138,12 +138,12 @@ public class CelestialObjectController : MonoBehaviour
         }
     }
 
-    private bool _isRespawningToBottom = false;
-
     private void OnPlayerRespawned()
     {
         _isPlayerDead = false;
-        _isRespawningToBottom = true; // Set flag for InitialPlacement
+        
+        // Reset pass completion so it can appear again if we are below it
+        _hasCompletedPass = false; 
 
         if (manualPlacement)
         {
@@ -157,9 +157,6 @@ public class CelestialObjectController : MonoBehaviour
             _hasBeenPlaced = false; // This will trigger InitialPlacement in HandleVisibility
             SetVisible(false); // Hide until InitialPlacement runs and makes it visible
         }
-        
-        // Allow the object to appear again if it drifted off screen while dead
-        _hasCompletedPass = false;
     }
 
 
@@ -429,7 +426,10 @@ public class CelestialObjectController : MonoBehaviour
         // Check if object is fully below the screen
         if (vp.y < 0f - halfHeightVp)
         {
-            Destroy(gameObject);
+            // Instead of destroying, just disable visuals and mark as passed.
+            // This allows it to be respawned/reset later.
+            SetVisible(false);
+            _hasCompletedPass = true;
         }
     }
     
