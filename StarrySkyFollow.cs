@@ -2,42 +2,42 @@ using UnityEngine;
 
 public class StarrySkyFollow : MonoBehaviour
 {
-    
+    [Header("Optional: data-driven")]
+    [SerializeField] private SkinManager skinManager;
+
     public Transform rocketShipPosition;
     public Transform Ship2Position;
     public Transform Ship3Position;
     public Transform MeteorPosition;
     public Transform LockedShipPosition;
+
     public GameObject rocketShip;
     public GameObject Ship2;
     public GameObject Ship3;
     public GameObject Meteor;
     public GameObject LockedShip;
+
     public Vector3 offset;
 
     void Update()
     {
-        if(rocketShip.activeSelf)
+        if (skinManager == null) skinManager = SkinManager.Instance;
+        if (skinManager != null && skinManager.CurrentRocketTransform != null)
         {
+            transform.position = skinManager.CurrentRocketTransform.position + offset;
+            return;
+        }
+
+        // Legacy fallback
+        if (rocketShip != null && rocketShip.activeSelf)
             transform.position = rocketShipPosition.position + offset;
-        }
-        else if(Ship2.activeSelf)
-        {
+        else if (Ship2 != null && Ship2.activeSelf)
             transform.position = Ship2Position.position + offset;
-        }
-        else if(Ship3.activeSelf)
-        {
+        else if (Ship3 != null && Ship3.activeSelf)
             transform.position = Ship3Position.position + offset;
-        }
-        else if(Meteor.activeSelf)
-        {
+        else if (Meteor != null && Meteor.activeSelf)
             transform.position = MeteorPosition.position + offset;
-        }
-        else if(LockedShip.activeSelf)
-        {
+        else if (LockedShip != null && LockedShip.activeSelf)
             transform.position = LockedShipPosition.position + offset;
-        }
     }
 }
-
-    

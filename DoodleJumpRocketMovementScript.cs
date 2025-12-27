@@ -2,53 +2,46 @@ using UnityEngine;
 
 public class DoodleJumpRocketMovementScript : MonoBehaviour
 {
-
     public Rigidbody2D rb;
     private Vector2 direction = Vector2.left;
-    public float speed = 50f;
+    public float speed = GameConstants.RocketInitialSpeed;
     public float boundsX = 2.9f;
 
+    [Header("Optional: data-driven")]
+    [SerializeField] private SkinManager skinManager;
+    private RocketController _controller;
 
-    bool isClickedYet = false;
-
-
-
-
-    void FixedUpdate()
+    private void Awake()
     {
+        if (rb == null) rb = GetComponent<Rigidbody2D>();
+        if (skinManager == null) skinManager = SkinManager.Instance;
 
-        if (Input.GetMouseButton(0))
-        {
-            isClickedYet = true;
-            Debug.Log("CLICKED");
-        }
+        _controller = GetComponent<RocketController>();
+        if (_controller == null) _controller = gameObject.AddComponent<RocketController>();
 
-        if (isClickedYet)
-        {
+        _controller.rb = rb;
+        _controller.rocketTransform = transform;
+        _controller.direction = direction;
+        _controller.useMouseInput = true;
+        _controller.requireFirstInputToStart = true;
 
+        // DoodleJump mode: horizontal only.
+        _controller.verticalSpeedMultiplier = 0f;
+        _controller.initialSpeed = GameConstants.RocketInitialSpeed;
+        _controller.finalSpeed = GameConstants.RocketFinalSpeed;
+        _controller.maxHeightSpeedIncrease = 0f;
 
-
-
-            if (Input.GetMouseButton(0))
-            {
-                rb.velocity = -speed * direction * Time.deltaTime;
-            }
-            else
-            {
-                rb.velocity = speed * direction * Time.deltaTime;
-                Debug.Log("Clicked");
-            }
-        }
+        if (skinManager != null && skinManager.CurrentSkin != null)
+            _controller.ApplySkinTuning(skinManager.CurrentSkin);
     }
 
     void OnCollisionEnter2D(Collision2D collision)
     {
         GameObject otherObj = collision.gameObject;
-        Debug.Log("Collided with: " + otherObj.tag);
-
         if (otherObj.tag == "Meteor")
         {
             Destroy(this.gameObject);
+            GameEvents.RaisePlayerCrashed();
         }
         if (otherObj.tag == "Wall")
         {
@@ -56,16 +49,9 @@ public class DoodleJumpRocketMovementScript : MonoBehaviour
         }
     }
 
-
-
-
-    
-
     private void Update()
     {
-        // Teleporting from one wall to the other
         Vector3 temp = transform.position;
-
         if (temp.x < -boundsX)
         {
             transform.Translate(new Vector3(2 * boundsX, 0, 0));
@@ -75,7 +61,4 @@ public class DoodleJumpRocketMovementScript : MonoBehaviour
             transform.Translate(new Vector3(-2 * boundsX, 0, 0));
         }
     }
-    
 }
-
-

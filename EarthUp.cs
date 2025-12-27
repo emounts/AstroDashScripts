@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class EarthUp : MonoBehaviour
@@ -7,17 +5,32 @@ public class EarthUp : MonoBehaviour
     public Rigidbody2D rb;
     public float upSpeed = 80f;
     public float destroyDelay = 1.5f;
-    // private bool isClickedYet = false;
-
-
+    [Tooltip("If true, large legacy speeds are scaled down to per-second units automatically.")]
+    public bool autoScaleLegacySpeed = true;
+    public float legacySpeedThreshold = 20f;
+    public float legacySpeedScale = 1f / 60f;
+    private bool _legacySpeedAdjusted;
 
     void FixedUpdate()
     {
-        rb.velocity = upSpeed * Vector2.up * Time.deltaTime;
+        if (rb == null) return;
 
-        if (gameObject.tag ==  "Earth")
+        MaybeConvertLegacySpeed();
+        rb.linearVelocity = upSpeed * Vector2.up;
+
+        if (gameObject.tag == "Earth")
         {
             Destroy(gameObject, destroyDelay);
         }
+    }
+
+    private void MaybeConvertLegacySpeed()
+    {
+        if (!autoScaleLegacySpeed) return;
+        if (_legacySpeedAdjusted) return;
+        if (upSpeed <= legacySpeedThreshold) return;
+
+        upSpeed *= legacySpeedScale;
+        _legacySpeedAdjusted = true;
     }
 }

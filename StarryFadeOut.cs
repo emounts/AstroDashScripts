@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class StarryFadeOut : MonoBehaviour
@@ -8,32 +7,47 @@ public class StarryFadeOut : MonoBehaviour
     public Transform rocketShip;
     public float fadeHeight = 1500f;
 
-        public void Update()
+    [Header("Optional: data-driven")]
+    [SerializeField] private SkinManager skinManager;
+
+    private bool _isFading;
+    private SpriteRenderer _sr;
+
+    private void Awake()
+    {
+        _sr = GetComponent<SpriteRenderer>();
+    }
+
+    public void Update()
+    {
+        if (_isFading) return;
+        if (_sr == null) return;
+
+        if (skinManager == null) skinManager = SkinManager.Instance;
+        Transform current = skinManager != null ? skinManager.CurrentRocketTransform : null;
+        Transform target = current != null ? current : rocketShip;
+        if (target == null) return;
+
+        if (target.position.y > fadeHeight)
         {
-            if (rocketShip.position.y > fadeHeight)
-            {
-                StartCoroutine(SpriteFadeOut(GetComponent<SpriteRenderer>()));
-            }
+            _isFading = true;
+            StartCoroutine(SpriteFadeOut(_sr));
         }
+    }
 
-        public IEnumerator SpriteFadeOut(SpriteRenderer _sprite)
+    public IEnumerator SpriteFadeOut(SpriteRenderer sprite)
+    {
+        Color tmpColor = sprite.color;
+        while (tmpColor.a > 0f)
         {
-            Color tmpColor = _sprite.color;
+            tmpColor.a -= Time.deltaTime / fadeOutTime;
+            sprite.color = tmpColor;
 
-            while (tmpColor.a > 0f)
-            {
-                tmpColor.a -= Time.deltaTime / fadeOutTime;
-                _sprite.color = tmpColor;
+            if (tmpColor.a <= 0f)
+                tmpColor.a = 0.0f;
 
-                if (tmpColor.a <= 0f)
-                {
-                    tmpColor.a = 0.0f;
-                }
-
-                yield return null;
-            }
-            _sprite.color = tmpColor;
+            yield return null;
         }
+        sprite.color = tmpColor;
+    }
 }
-
-

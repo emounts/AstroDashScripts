@@ -13,14 +13,17 @@ public class Destructable : MonoBehaviour
 
     public Rigidbody2D rb2D;
 
-    
+
     void Start()
     {
+        if (rb2D == null)
+            rb2D = GetComponent<Rigidbody2D>();
+        if (rb2D == null)
+            return;
 
         float randTorque = UnityEngine.Random.Range(-7, 7);
-        // rb2D = GetComponent<Rigidbody2D>();
         rb2D.AddForce(forceDirection * 10);
-        rb2D.AddTorque(randTorque);
+        rb2D.AddTorque(randTorque + torque);
     }
 
     

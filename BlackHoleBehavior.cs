@@ -13,17 +13,19 @@ public class BlackHoleBehavior : MonoBehaviour
 
     void Start()
     {
-
-        playerBody = player.GetComponent<Rigidbody2D>();  
+        if (player != null)
+            playerBody = player.GetComponent<Rigidbody2D>();
     }
 
-    void Update()
+    void FixedUpdate()
     {
+        if (player == null || playerBody == null) return;
+
         distanceToPlayer = Vector2.Distance(player.position, transform.position);
-        if (distanceToPlayer <= pullRadius)
-        {
-            pullForce = (transform.position - player.position).normalized / distanceToPlayer * intensity;
-            playerBody.AddForce(pullForce, ForceMode2D.Force);
-        }
+        if (distanceToPlayer > pullRadius) return;
+        if (distanceToPlayer <= 0.001f) return;
+
+        pullForce = (transform.position - player.position).normalized / distanceToPlayer * intensity;
+        playerBody.AddForce(pullForce, ForceMode2D.Force);
     }
 }

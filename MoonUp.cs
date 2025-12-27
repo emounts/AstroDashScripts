@@ -1,12 +1,15 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class MoonUp : MonoBehaviour
 {
+    [Header("Optional: data-driven")]
+    [SerializeField] private SkinManager skinManager;
+
     public Transform moonT;
     public GameObject moonGO;
     public Rigidbody2D moonRB;
+
+    // Legacy fields (kept for inspector compatibility)
     public Transform rs1;
     public Transform rs2;
     public Transform rs3;
@@ -21,84 +24,61 @@ public class MoonUp : MonoBehaviour
     private float rocketSpeed;
     public float slowingSpeed = 0.5f;
 
-    
+    private Vector3 _lastPos;
+    private bool _hasLastPos;
+    private CelestialObjectController _celestialController;
+
+    private void Awake()
+    {
+        // If a CelestialObjectController is present on this object, let it drive motion entirely.
+        _celestialController = GetComponent<CelestialObjectController>();
+        if (_celestialController != null)
+        {
+            enabled = false;
+            return;
+        }
+    }
+
     void Update()
     {
-        if(RS1.activeSelf)
+        if (!enabled) return;
+        if (skinManager == null) skinManager = SkinManager.Instance;
+
+        // Preferred: use active rocket rigidbody if available.
+        Rigidbody2D currentRb = skinManager != null ? skinManager.CurrentRocketRigidbody : null;
+        if (currentRb != null)
         {
-            StartCoroutine(CalculateSpeedRS1());
-            moonRB.velocity = (rocketSpeed - slowingSpeed) * Vector2.up; //* Time.deltaTime;
+            rocketSpeed = currentRb.linearVelocity.magnitude;
+            if (moonRB != null)
+                moonRB.linearVelocity = Mathf.Max(rocketSpeed - slowingSpeed, 0f) * Vector2.up;
+            return;
         }
 
-        else if (RS2.activeSelf)
+        // Legacy fallback: compute speed from the currently active rocket transform.
+        Transform active = GetActiveRocketTransform();
+        if (active == null || moonRB == null)
         {
-            StartCoroutine(CalculateSpeedRS2());
-            moonRB.velocity = (rocketSpeed - slowingSpeed) * Vector2.up; //* Time.deltaTime;
+            if (moonRB != null) moonRB.linearVelocity = Vector2.zero;
+            return;
         }
 
-        else if (RS3.activeSelf)
-        {
-            StartCoroutine(CalculateSpeedRS3());
-            moonRB.velocity = (rocketSpeed - slowingSpeed) * Vector2.up; //* Time.deltaTime;
-        }
+        Vector3 pos = active.position;
+        if (_hasLastPos)
+            rocketSpeed = (pos - _lastPos).magnitude / Mathf.Max(Time.deltaTime, 0.0001f);
 
-        else if (RS4.activeSelf)
-        {
-            StartCoroutine(CalculateSpeedRS4());
-            moonRB.velocity = (rocketSpeed - slowingSpeed) * Vector2.up; //* Time.deltaTime;
-        }
+        _lastPos = pos;
+        _hasLastPos = true;
 
-        else if (RS5.activeSelf)
-        {
-            StartCoroutine(CalculateSpeedRS5());
-            moonRB.velocity = (rocketSpeed - slowingSpeed) * Vector2.up; //* Time.deltaTime;
-        }
-        else 
-        {
-            moonRB.velocity = Vector2.zero * Time.deltaTime;
-            Debug.Log("Collision!");
-        }
-
-        // if(rs1.position.y - moonT.position.y > 30f) 
-        // {
-        //     moonGO.SetActive(false);
-        // }
-                
-            
+        moonRB.linearVelocity = Mathf.Max(rocketSpeed - slowingSpeed, 0f) * Vector2.up;
     }
 
-    IEnumerator CalculateSpeedRS1()
+    private Transform GetActiveRocketTransform()
     {
-        Vector3 lastPosition = rs1.position;
-        yield return new WaitForFixedUpdate();
-        rocketSpeed = (lastPosition - rs1.position).magnitude / Time.deltaTime;
-    }
-
-    IEnumerator CalculateSpeedRS2()
-    {
-        Vector3 lastPosition = rs2.position;
-        yield return new WaitForFixedUpdate();
-        rocketSpeed = (lastPosition - rs2.position).magnitude / Time.deltaTime;
-    }
-
-    IEnumerator CalculateSpeedRS3()
-    {
-        Vector3 lastPosition = rs3.position;
-        yield return new WaitForFixedUpdate();
-        rocketSpeed = (lastPosition - rs3.position).magnitude / Time.deltaTime;
-    }
-
-    IEnumerator CalculateSpeedRS4()
-    {
-        Vector3 lastPosition = rs4.position;
-        yield return new WaitForFixedUpdate();
-        rocketSpeed = (lastPosition - rs4.position).magnitude / Time.deltaTime;
-    }
-
-    IEnumerator CalculateSpeedRS5()
-    {
-        Vector3 lastPosition = rs5.position;
-        yield return new WaitForFixedUpdate();
-        rocketSpeed = (lastPosition - rs5.position).magnitude / Time.deltaTime;
+        if (RS1 != null && RS1.activeSelf) return rs1;
+        if (RS2 != null && RS2.activeSelf) return rs2;
+        if (RS3 != null && RS3.activeSelf) return rs3;
+        if (RS4 != null && RS4.activeSelf) return rs4;
+        if (RS5 != null && RS5.activeSelf) return rs5;
+        return null;
     }
 }

@@ -1,16 +1,9 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
-// TMPro is needed for the text I'm using
 using TMPro;
-using System.Globalization;
 
 public class HighScore : MonoBehaviour
 {
-
     public TextMeshProUGUI scoreTextHigh;
-
 
     void Update()
     {
@@ -19,9 +12,7 @@ public class HighScore : MonoBehaviour
 
     void UpdateHighScoreText()
     {
-        scoreTextHigh.text = $"{PlayerPrefs.GetString("High Score", "1")}";
-
+        if (scoreTextHigh == null) return;
+        scoreTextHigh.text = PlayerPrefs.GetInt(GameConstants.PrefHighScore, 0).ToString();
     }
-
 }
-
