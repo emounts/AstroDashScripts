@@ -53,7 +53,7 @@ public class ProgressBarManager : MonoBehaviour
     private Image activeRocketTrackerImage;
 
     private const float EARTH_ICON_OFFSET = -0.03f; // 3% below actual position to appear below rocket
-    private const float PLANET_ICON_OFFSET = 0.08f; // 3% above calculated position to sit better on bar
+    private const float PLANET_ICON_OFFSET = 0.1f; // Increased to test visual height and ensure planets are not too low
 
     private bool isPlayerDead = false;
 
@@ -352,8 +352,18 @@ public class ProgressBarManager : MonoBehaviour
             }
             else if (obj is CelestialObjectController)
             {
-                // Always show planets on the progress bar so the player can see upcoming celestial bodies.
-                shouldShow = true;
+                // Check if the planet has already been made visible.
+                // If it has, it should remain visible on the progress bar.
+                if (visibleIcons.Contains(obj))
+                {
+                    shouldShow = true;
+                }
+                else
+                {
+                    // Otherwise, determine initial visibility:
+                    // Show planet if it is within 100 units below or ahead of the rocket's current Y position.
+                    shouldShow = obj.transform.position.y >= (rocketTransform.position.y);
+                }
             }
 
             // --- Apply Visibility ---

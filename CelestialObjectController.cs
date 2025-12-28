@@ -246,52 +246,40 @@ public class CelestialObjectController : MonoBehaviour
     /// <summary>
     /// Places the object at its starting position and establishes its stationary world anchor.
     /// </summary>
-    private void InitialPlacement()
+private void InitialPlacement()
     {
         _rocket = ResolveRocket();
         if (_rocket == null || targetCamera == null) return;
 
-        // Determine the horizontal position based on the viewport percentage.
         float viewportX = Mathf.Clamp01(xPosition / 100f);
-        // We use the camera's Z distance to project the viewport coordinate into the world.
         float distance = transform.position.z - targetCamera.transform.position.z;
         Vector3 worldPos = targetCamera.ViewportToWorldPoint(new Vector3(viewportX, 0.5f, distance));
 
-        // The stationary anchor is this initial world X-position.
         _worldAnchorX = worldPos.x;
 
-        // Position the object high above the rocket, just out of view.
         float camHalfHeight = targetCamera.orthographic ? targetCamera.orthographicSize : 5f;
         float objHalfHeight = _renderers.Length > 0 ? _renderers[0].bounds.extents.y : 0.5f;
-        
-        // Calculate the standard offset used for spawning
+
         float standardOffset = camHalfHeight + objHalfHeight + spawnYOffset;
 
         float spawnY;
-        
+
         if (useHeightGate && _rocket.position.y > appearHeight)
         {
-            // If we are using a height gate and the rocket is already past it (e.g. respawn),
-            // calculate where the object *should* be based on how far the rocket has traveled.
-            
-            // The position it would have had if the rocket was exactly at appearHeight
             float virtualStartY = appearHeight + standardOffset;
-            
-            // The distance the rocket has traveled past the trigger
             float distanceTraveled = _rocket.position.y - appearHeight;
-            
-            // The distance the object should have traveled
             float objectTravel = distanceTraveled * relativeSpeedFactor;
-            
             spawnY = virtualStartY + objectTravel;
         }
         else
         {
-            // Standard behavior: spawn relative to current rocket position
             spawnY = _rocket.position.y + standardOffset;
         }
 
         transform.position = new Vector3(_worldAnchorX, spawnY, 0f);
+
+        // ✅ IMPORTANT: mark as placed so we don't keep resetting every frame
+        _hasBeenPlaced = true;
     }
 
     /// <summary>
