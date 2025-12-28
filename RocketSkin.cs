@@ -59,6 +59,8 @@ public class RocketSkin : ScriptableObject
     [Header("Content")]
     public GameObject rocketPrefab;
     public Sprite uiSprite;
+    public Sprite lifeIconSprite;
+    public Vector2 lifeIconSize = new Vector2(64f, 64f);
 
     [Header("Menu Appearance")]
     [Tooltip("Scale multiplier for this rocket when shown in the menu/skin selector.")]

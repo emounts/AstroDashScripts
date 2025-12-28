@@ -24,6 +24,10 @@ public class LivesManager : MonoBehaviour
     private int maxLives;
     private int currentLives;
     private Sprite currentIconSprite;
+    private RocketSkin currentSkin;
+
+    public bool IsLivesUIReady { get; private set; }
+
 
     private void Awake()
     {
@@ -67,11 +71,13 @@ public class LivesManager : MonoBehaviour
 
     public void SetupLives(int maxLives, Sprite iconSprite)
     {
+        IsLivesUIReady = false;
+
         this.maxLives = Mathf.Max(0, maxLives);
         currentLives = this.maxLives;
         currentIconSprite = iconSprite;
 
-        // Clear existing
+        // Clear existing...
         foreach (var icon in lifeIcons)
         {
             if (icon != null) Destroy(icon);
@@ -89,22 +95,21 @@ public class LivesManager : MonoBehaviour
             }
             else
             {
-                // Fallback: Create simple Image object
-                newIcon = new GameObject($"LifeIcon_{i}", typeof(RectTransform), typeof(Image));
+                newIcon = new GameObject($"LifeIcon_{i}", typeof(RectTransform), typeof(UnityEngine.UI.Image));
                 newIcon.transform.SetParent(livesContainer, false);
             }
 
-            // Manual Positioning
             RectTransform rt = newIcon.GetComponent<RectTransform>();
             if (rt != null)
             {
-                // Align left-to-right from the container's anchor point.
                 rt.anchoredPosition = new Vector2(i * iconSpacing, 0);
             }
 
             ApplySpriteToIcon(newIcon, currentIconSprite);
             lifeIcons.Add(newIcon);
         }
+
+        IsLivesUIReady = true;
     }
 
     public void LoseLife()
@@ -149,12 +154,27 @@ public class LivesManager : MonoBehaviour
             img.sprite = sprite;
             img.preserveAspect = true;
             img.enabled = true;
+
+            // Apply per-skin size if available
+            if (currentSkin != null)
+            {
+                RectTransform rt = img.rectTransform;
+                rt.sizeDelta = currentSkin.lifeIconSize;
+            }
         }
     }
+
 
     private void OnSkinChanged(RocketSkin skin)
     {
         if (skin == null) return;
-        UpdateLifeSprite(skin.uiSprite);
+
+        currentSkin = skin;
+
+        // Prefer the per-skin life icon, fall back to uiSprite if not assigned
+        var sprite = skin.lifeIconSprite != null ? skin.lifeIconSprite : skin.uiSprite;
+        UpdateLifeSprite(sprite);
     }
+
+
 }

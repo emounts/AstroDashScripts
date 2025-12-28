@@ -28,7 +28,7 @@ public class RocketController : MonoBehaviour
     [Header("Start Behavior")]
     public bool requireFirstInputToStart = true;
     public bool flyStraightOnStart = true;
-    public float startAccelerationDuration = 1f;
+    public float startAccelerationDuration = 2.5f;
 
     [Header("Runtime Toggle")]
     [Tooltip("If false, RocketController will not modify Rigidbody2D velocity.")]

@@ -121,7 +121,7 @@ public class GameManagerRS : MonoBehaviour
             Sprite lifeSprite = null;
             if (SkinManager.Instance != null && SkinManager.Instance.CurrentSkin != null)
             {
-                lifeSprite = SkinManager.Instance.CurrentSkin.uiSprite;
+                lifeSprite = SkinManager.Instance.CurrentSkin.lifeIconSprite;
             }
             LivesManager.Instance.SetupLives(startingLives, lifeSprite);
         }
