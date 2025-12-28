@@ -8,18 +8,6 @@ public class RSScore : MonoBehaviour
     [Header("Optional: data-driven")]
     [SerializeField] private SkinManager skinManager;
 
-    public Transform rocketShipPosition;
-    public Transform Ship2Position;
-    public Transform Ship3Position;
-    public Transform MeteorPosition;
-    public Transform LockedShipPosition;
-
-    public GameObject rocketShip;
-    public GameObject Ship2;
-    public GameObject Ship3;
-    public GameObject Meteor;
-    public GameObject LockedShip;
-
     public TextMeshProUGUI scoreText;
 
     private float _startY = float.NaN;
@@ -48,20 +36,7 @@ public class RSScore : MonoBehaviour
         if (current != null)
         {
             UpdateScoreFromY(current.position.y);
-            return;
         }
-
-        // Legacy fallback
-        if (rocketShip != null && rocketShip.activeSelf)
-            UpdateScoreFromY(rocketShipPosition.position.y);
-        else if (Ship2 != null && Ship2.activeSelf)
-            UpdateScoreFromY(Ship2Position.position.y);
-        else if (Ship3 != null && Ship3.activeSelf)
-            UpdateScoreFromY(Ship3Position.position.y);
-        else if (Meteor != null && Meteor.activeSelf)
-            UpdateScoreFromY(MeteorPosition.position.y);
-        else if (LockedShip != null && LockedShip.activeSelf)
-            UpdateScoreFromY(LockedShipPosition.position.y);
     }
 
     private void UpdateScoreFromY(float y)
