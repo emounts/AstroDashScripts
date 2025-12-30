@@ -18,6 +18,8 @@ public class GameManagerRS : MonoBehaviour
     private static Checkpoint latestCheckpointScript;
     private static Vector3 latestCheckpointPosition;
     private static bool hasCheckpoint = false;
+    private static Vector2 latestCheckpointRocketPos;
+
     
     // Lives System
     [SerializeField] private int startingLives = 3;
@@ -149,12 +151,21 @@ public class GameManagerRS : MonoBehaviour
     private void OnEnable()
     {
         GameEvents.PlayerCrashed += OnPlayerCrashed;
+        GameEvents.CheckpointReached += OnCheckpointReached;
     }
 
     private void OnDisable()
     {
         GameEvents.PlayerCrashed -= OnPlayerCrashed;
+        GameEvents.CheckpointReached -= OnCheckpointReached;
     }
+
+    private void OnCheckpointReached(Vector2 rocketPos)
+    {
+        hasCheckpoint = true;
+        latestCheckpointRocketPos = rocketPos;
+    }
+
 
     /// <summary>
     /// Called by a Checkpoint object when the player passes through it.
@@ -235,18 +246,18 @@ public class GameManagerRS : MonoBehaviour
         Debug.Log("GameManagerRS: RespawnPlayer called.");
         
         // Determine respawn position
-        Vector3 respawnPos = hasCheckpoint ? latestCheckpointPosition : initialStartPosition;
+        Vector3 respawnPos;
 
         if (hasCheckpoint)
         {
-            Debug.Log($"GameManagerRS: Applying Checkpoint Offset: {respawnHeightOffset}");
-            respawnPos.y += respawnHeightOffset;
+            respawnPos = new Vector3(latestCheckpointRocketPos.x, latestCheckpointRocketPos.y, 0f);
+            respawnPos.y += respawnHeightOffset; // keep your current behavior
         }
         else
         {
-             // Lower the respawn position slightly so the Earth below is visible
-             respawnPos.y -= 0f;
+            respawnPos = initialStartPosition;
         }
+
 
         // Reset Checkpoint Visuals if applicable and we are at a checkpoint
         if (hasCheckpoint && latestCheckpointScript != null)

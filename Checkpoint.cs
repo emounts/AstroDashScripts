@@ -44,11 +44,11 @@ public class Checkpoint : MonoBehaviour
         // Check if it's the player
         if (other.GetComponent<RocketMovement1>() != null || other.CompareTag("Player") || other.CompareTag("RocketShip"))
         {
-            ActivateCheckpoint();
+            ActivateCheckpoint(other);
         }
     }
 
-    private void ActivateCheckpoint()
+    private void ActivateCheckpoint(GameObject other)
     {
         isActivated = true;
 
@@ -71,7 +71,17 @@ public class Checkpoint : MonoBehaviour
             UIManager.Instance.ShowCheckpointMessage("Checkpoint Reached!");
         }
         
-        GameEvents.RaiseCheckpointReached();
+        var rocket = other.GetComponentInParent<Rigidbody2D>();
+        if (rocket != null)
+        {
+            GameEvents.RaiseCheckpointReached(rocket.position);
+        }
+        else
+        {
+            // fallback if you only have a Transform
+            GameEvents.RaiseCheckpointReached(other.transform.position);
+        }
+
     }
 
     public void ResetVisuals()

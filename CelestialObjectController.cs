@@ -22,10 +22,10 @@ public class CelestialObjectController : MonoBehaviour
     [Header("Parallax / Tracking")]
     [Tooltip("Controls how much the object tracks the rocket's X-position.\n0 = Perfectly stationary in the world.\n100 = Tracks the rocket's X-position perfectly.")]
     [Range(0f, 100f)] public float sizeScaling = 0f;
-    
+
     [Tooltip("Multiplier for the rocket's upward speed. \n0 = Stationary vertically.\n1 = Moves at the same speed as the rocket.")]
     [Range(0f, 1f)] public float relativeSpeedFactor = 0.7f;
-    
+
     [Tooltip("World-space Y offset above the rocket to spawn when appearing.")]
     public float spawnYOffset = 10f;
 
@@ -50,10 +50,10 @@ public class CelestialObjectController : MonoBehaviour
     private bool _isVisible;
     private Transform _rocket;
     private Rigidbody2D _body;
-    
+
     private float _appearStartTime;
     private float _enableTime;
-    
+
     // The world-space X-coordinate that represents a stationary (sizeScaling=0) position.
     private float _worldAnchorX;
     private bool _hasBeenPlaced;
@@ -62,7 +62,17 @@ public class CelestialObjectController : MonoBehaviour
     private Vector3 _lastCameraPos;
     private Vector3 _initialWorldPosition; // Stores the starting position for manual placement
 
-    
+    // --- Progress bar alignment snapshot ---
+    // Captured the first frame the object becomes visible (in-world), so UI can align the crossing time.
+    private bool _hasAppearSnapshot;
+    private float _appearRocketY;
+    private float _appearPlanetY;
+
+    public bool HasAppearSnapshot => _hasAppearSnapshot;
+    public float AppearRocketY => _appearRocketY;
+    public float AppearPlanetY => _appearPlanetY;
+    public bool IsWorldVisible => _isVisible;
+
     private void Awake()
     {
         // Force Earth to always be manual placement
@@ -77,7 +87,7 @@ public class CelestialObjectController : MonoBehaviour
         // Set initial state
         SetVisible(false);
         _enableTime = Time.time;
-        
+
         if (manualPlacement)
         {
             // Use the object's current scene position as its anchor
@@ -102,6 +112,10 @@ public class CelestialObjectController : MonoBehaviour
         // Reset state for object pooling
         _rocket = ResolveRocket();
         _isStarted = false;
+        _hasAppearSnapshot = false;
+        _appearRocketY = 0f;
+        _appearPlanetY = 0f;
+
         _isPlayerDead = false;
         _enableTime = Time.time;
 
@@ -141,9 +155,9 @@ public class CelestialObjectController : MonoBehaviour
     private void OnPlayerRespawned()
     {
         _isPlayerDead = false;
-        
+
         // Reset pass completion so it can appear again if we are below it
-        _hasCompletedPass = false; 
+        _hasCompletedPass = false;
 
         if (manualPlacement)
         {
@@ -159,7 +173,6 @@ public class CelestialObjectController : MonoBehaviour
         }
     }
 
-
     private void Update()
     {
         if (_rocket == null) _rocket = ResolveRocket();
@@ -172,7 +185,7 @@ public class CelestialObjectController : MonoBehaviour
 
         // Determine if the object should be visible based on timing
         HandleVisibility();
-        
+
         // After becoming visible, check if it has moved offscreen to be destroyed
         if (_isVisible)
         {
@@ -190,7 +203,7 @@ public class CelestialObjectController : MonoBehaviour
             // Calculate camera's vertical velocity since the last physics frame.
             float cameraVy = (targetCamera.transform.position.y - _lastCameraPos.y) / Time.fixedDeltaTime;
             _lastCameraPos = targetCamera.transform.position;
-            
+
             // The object's target speed is the camera's speed, minus the relative drift.
             float targetVy = cameraVy - postDeathDriftSpeed;
 
@@ -230,7 +243,7 @@ public class CelestialObjectController : MonoBehaviour
         {
             // This script assumes full control of velocity; disable gravity during active movement.
             _body.gravityScale = 0;
-            
+
             // For rigidbodies, set velocity to move towards the target position.
             // This is smoother and more physics-correct than setting the position directly.
             float requiredVelX = (targetX - _body.position.x) / Time.fixedDeltaTime;
@@ -246,7 +259,7 @@ public class CelestialObjectController : MonoBehaviour
     /// <summary>
     /// Places the object at its starting position and establishes its stationary world anchor.
     /// </summary>
-private void InitialPlacement()
+    private void InitialPlacement()
     {
         _rocket = ResolveRocket();
         if (_rocket == null || targetCamera == null) return;
@@ -278,7 +291,7 @@ private void InitialPlacement()
 
         transform.position = new Vector3(_worldAnchorX, spawnY, 0f);
 
-        // ✅ IMPORTANT: mark as placed so we don't keep resetting every frame
+        // Mark as placed so we don't keep resetting every frame
         _hasBeenPlaced = true;
     }
 
@@ -290,16 +303,16 @@ private void InitialPlacement()
         // If manual placement is on, we generally want it visible.
         if (manualPlacement)
         {
-             // If height gate is NOT used, force visible.
-             if (!useHeightGate)
-             {
-                 if (!_isVisible) SetVisible(true);
-                 _isStarted = true;
-                 return;
-             }
-             // If height gate IS used, we fall through to the logic below, 
-             // but we ensure we are considered "placed".
-             _hasBeenPlaced = true;
+            // If height gate is NOT used, force visible.
+            if (!useHeightGate)
+            {
+                if (!_isVisible) SetVisible(true);
+                _isStarted = true;
+                return;
+            }
+            // If height gate IS used, we fall through to the logic below,
+            // but we ensure we are considered "placed".
+            _hasBeenPlaced = true;
         }
 
         if (useHeightGate)
@@ -309,13 +322,13 @@ private void InitialPlacement()
             if (!passedHeight)
             {
                 if (_isVisible) SetVisible(false);
-                if (!manualPlacement) _hasBeenPlaced = false; 
+                if (!manualPlacement) _hasBeenPlaced = false;
                 _hasCompletedPass = false; // Allow a new pass since we fell below
                 return;
             }
 
-            // STRICT CHECK: If we have already finished this pass (flown off screen), DO NOT RESPWAN.
-            if (_hasCompletedPass) 
+            // STRICT CHECK: If we have already finished this pass (flown off screen), DO NOT RESPAWN.
+            if (_hasCompletedPass)
             {
                 if (_isVisible) SetVisible(false); // Ensure it stays hidden
                 return;
@@ -337,14 +350,14 @@ private void InitialPlacement()
 
         // --- Standard Logic (No Height Gate) ---
 
-        // If we have already finished this pass (flown off screen), DO NOT RESPWAN until reset.
+        // If we have already finished this pass (flown off screen), DO NOT RESPAWN until reset.
         if (_hasCompletedPass)
         {
             if (_isVisible) SetVisible(false);
             return;
         }
 
-        // Fix: If we haven't been placed yet (e.g. cleared by OnEnable), place us now.
+        // If we haven't been placed yet (e.g. cleared by OnEnable), place us now.
         if (!_hasBeenPlaced)
         {
             InitialPlacement();
@@ -363,8 +376,6 @@ private void InitialPlacement()
         }
 
         float travelElapsed = _isStarted ? Time.time - _appearStartTime : 0f;
-        // If manual placement is on, we ignore timeAppear logic (it was handled at top),
-        // but if we are here, we might be standard logic.
         bool shouldBeVisible = _hasBeenPlaced && (manualPlacement || timeAppear <= 0f || travelElapsed >= timeAppear);
 
         if (shouldBeVisible != _isVisible)
@@ -372,10 +383,23 @@ private void InitialPlacement()
             SetVisible(shouldBeVisible);
         }
     }
-    
+
     private void SetVisible(bool visible)
     {
         _isVisible = visible;
+
+        // Capture a snapshot the first time we become visible so UI can align crossings.
+        if (visible && !_hasAppearSnapshot)
+        {
+            if (_rocket == null) _rocket = ResolveRocket();
+            if (_rocket != null)
+            {
+                _appearRocketY = _rocket.position.y;
+            }
+            _appearPlanetY = transform.position.y;
+            _hasAppearSnapshot = true;
+        }
+
         if (_renderers == null) return;
         foreach (var r in _renderers)
         {
@@ -403,7 +427,7 @@ private void InitialPlacement()
         Rigidbody2D rb = _rocket.GetComponent<Rigidbody2D>();
         return rb != null ? rb.linearVelocity.y : 0f;
     }
-    
+
     private void CheckAndDestroyIfOffscreen()
     {
         if (targetCamera == null) return;
@@ -415,15 +439,14 @@ private void InitialPlacement()
         if (vp.y < 0f - halfHeightVp)
         {
             // Instead of destroying, just disable visuals and mark as passed.
-            // This allows it to be respawned/reset later.
             SetVisible(false);
             _hasCompletedPass = true;
         }
     }
-    
+
     private Rect GetObjectBoundsViewport()
     {
-        if (_renderers.Length == 0) return new Rect(0,0,0,0);
+        if (_renderers.Length == 0) return new Rect(0, 0, 0, 0);
 
         Bounds b = _renderers[0].bounds;
         for (int i = 1; i < _renderers.Length; i++)
