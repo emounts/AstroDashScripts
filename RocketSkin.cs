@@ -61,6 +61,10 @@ public class RocketSkin : ScriptableObject
     public Sprite uiSprite;
     public Sprite lifeIconSprite;
     public Vector2 lifeIconSize = new Vector2(64f, 64f);
+    
+    [Range(0f, 1f)]
+    public float lifeIconOpacity = 1f;
+
 
     [Header("Menu Appearance")]
     [Tooltip("Scale multiplier for this rocket when shown in the menu/skin selector.")]

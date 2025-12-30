@@ -109,6 +109,14 @@ public class LivesManager : MonoBehaviour
             lifeIcons.Add(newIcon);
         }
 
+        // If we already have a skin, re-apply to enforce opacity/size immediately.
+        if (currentSkin != null)
+        {
+            var sprite = currentSkin.lifeIconSprite != null ? currentSkin.lifeIconSprite : currentSkin.uiSprite;
+            UpdateLifeSprite(sprite);
+        }
+
+
         IsLivesUIReady = true;
     }
 
@@ -148,21 +156,44 @@ public class LivesManager : MonoBehaviour
     {
         if (iconObj == null || sprite == null) return;
 
-        Image img = iconObj.GetComponent<Image>();
-        if (img != null)
+        float alpha = 1f;
+        Vector2 size = new Vector2(64f, 64f);
+
+        if (currentSkin != null)
         {
+            alpha = Mathf.Clamp01(currentSkin.lifeIconOpacity);
+            size = currentSkin.lifeIconSize;
+        }
+
+        // Add or get a CanvasGroup on the icon root and drive opacity through it.
+        // This is harder for other code to accidentally override.
+        var cg = iconObj.GetComponent<CanvasGroup>();
+        if (cg == null) cg = iconObj.AddComponent<CanvasGroup>();
+        cg.alpha = alpha;
+
+        // Apply sprite to the visible Images (root + children)
+        Image[] images = iconObj.GetComponentsInChildren<Image>(true);
+        if (images == null || images.Length == 0) return;
+
+        foreach (var img in images)
+        {
+            if (img == null) continue;
+
             img.sprite = sprite;
             img.preserveAspect = true;
             img.enabled = true;
 
-            // Apply per-skin size if available
-            if (currentSkin != null)
-            {
-                RectTransform rt = img.rectTransform;
-                rt.sizeDelta = currentSkin.lifeIconSize;
-            }
+            // Keep image color alpha at 1 so CanvasGroup is the single source of truth.
+            Color c = img.color;
+            c.a = 1f;
+            img.color = c;
         }
+
+        images[0].rectTransform.sizeDelta = size;
     }
+
+
+
 
 
     private void OnSkinChanged(RocketSkin skin)
